@@ -1,0 +1,10 @@
+# 运行时数据：档位登录态、脚本、快照、日志——都是本机私有，绝不进版本库
+slots.json
+slots/
+snapshots/
+scripts/
+farm.log
+farm.log.old
+test-home/
+test-cli-home/
+node_modules/
