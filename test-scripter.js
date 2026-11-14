@@ -300,6 +300,24 @@ async function cleanup() {
     n1);
   ok('文件名消毒+同名同秒不覆盖', /[\\/:*?"<>|]/.test(path.basename(n1)) === false && n1 !== n2 && fs.existsSync(n2), { n1, n2 });
 
+  // ===== 农场录制 → forge rec.json（桥的转换器：字段契约按 forge evidence.mjs 读取面） =====
+  const fApi = [
+    { url: 'https://h/api/list', method: 'POST', status: 200, count: 3, tsUTC: '00:00:05', postData: '{"wd":1}' },
+    { url: 'https://h/api/who', method: 'GET', status: 403, count: 1, tsUTC: '00:00:06', postData: null },
+  ];
+  const frec = scripter.toForgeRec(noteSteps, fApi, '巡检流程/日', { slotId: '01' });
+  const fa = frec.actions[0], fn = frec.network[0];
+  ok('toForgeRec 契约齐（actions: seq/type/at/text/selector/locator/page；network: at/method/url/status/body；count 展开）',
+    frec.actions.length === 2 && fa.seq === 1 && fa.type === 'click' && /^\d{2}:\d{2}:\d{2}$/.test(fa.at)
+    && fa.text === '刷新' && fa.locator.best === '#b1' && fa.page === 'http://127.0.0.1:9882/x'
+    && frec.network.length === 4 && fn.method === 'POST' && fn.status === 200 && fn.body === '{"wd":1}'
+    && fn.url === 'https://h/api/list' && frec.meta.from === 'browser-farm 档01',
+    { fa, fn });
+  ok('动作铺在第一条接口前（时间线不倒挂）+轮询热度保留',
+    frec.actions[1].at < frec.network.find(r => r.url.includes('list')).at
+    && frec.network.filter(r => r.url.includes('list')).length === 3,
+    { lastAct: frec.actions[1].at, firstNet: frec.network[0].at });
+
   await cleanup();
   fs.rmSync(TMP, { recursive: true, force: true });
   console.log('\n' + pass + '/' + total + ' 断言' + (pass === total ? '全过 ✓' : '有失败 ✗'));

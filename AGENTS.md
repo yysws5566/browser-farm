@@ -105,6 +105,18 @@ POST /slot/ID/replay {"url":"抓到的接口","method":"GET"}   ← 带档位登
 - **replay 401/403/被拦** → 老实留在农场点页面。
 - 清单里**重复次数高**的接口多半是数据轮询接口，最值得转纯后台。
 
+## 装了 forge(record-to-skill) 的机器：桥（1+1>2）
+
+forge 的录制/探查/纯接口执行全走 `--port`，农场档位就是现成的调试口——挂上去它就**免登录**（真人只在农场档扫一次码），cookie 过期回档重登就行：
+
+```
+node farm.js forge 01 record --url https://目标站 --name 链路名 --forge-dir <forge目录>
+node farm.js forge 01,02,04 api_run --config xx --go     # 多档顺序跑=多账号
+node farm.js forge-rec 07                                  # 农场脚本07 → forge rec.json
+```
+
+桥焊死两条：档口按档位分配（别传 `--port`）、`--keep-open` 强制（forge 默认收尾按端口关浏览器，会把农场档杀了）。rec.json 交给 forge 的 `evidence.mjs`（打分挑数据源）→ `probe.mjs`（挂档口免登录复现接口）→ `build_skill.mjs`（出可安装子包）——农场出料、forge 出判定，两边谁也不用改谁。
+
 ## 挂机脚本（重复活交给脚本盯，不占你）
 
 两类：**路径循环**（录一串点击按随机间隔反复跑）和**数据触发**（盯表格某格达标点该行按钮）。

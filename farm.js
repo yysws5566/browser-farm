@@ -78,6 +78,8 @@ async function main() {
     '  sniff <id> start|stop      抓包：start 开录页面背后的接口，stop 出清单',
     '  replay <id> <url> [--method M] [--data D] [--header k:v]  带档位登录态脱离浏览器重放',
     '  record <id> [--name 名字] [--agent]  录制点击路径（窗口右下角常驻条开录/停，Ctrl+C 也收）；--agent=不存脚本，存 agent-notes/ 笔记',
+    '  forge <id[,id..]> <forge脚本名> [参数..]  forge(record-to-skill) 挂档位口跑：免登录录制/探查/纯接口（--forge-dir 指 forge 目录）',
+    '  forge-rec <脚本id | 笔记.md>   农场录制产物转 forge 的 rec.json，喂它的 evidence/probe/build 管线',
     '  build <id>                     数据触发向导（消费≥300点暂停这种）',
     '  runscript <脚本id> [档位id] [--loop N] [--once] [--dry]   后台执行（关终端也跑；档位没给用绑定的）',
     '  stopscript <脚本id> | scripts | showscript <脚本id>',
@@ -313,6 +315,76 @@ async function main() {
     if (!a) die('structured 要档位 id（在当前页上抓 og/json-ld/meta，先 open 到目标页）');
     return out(await api('POST', '/slot/' + a + '/structured', argFlag('--target') ? { targetId: argVal('--target') } : {}));
   }
+
+  // ---- forge 桥：forge(record-to-skill) 的脚本挂到档位口上跑——免登录录制/探查/纯接口 ----
+  // 档口和 --keep-open 是桥的产权：口按档位分配，收尾不杀档（forge 默认收尾按端口关浏览器，会把农场档害了）
+  if (cmd === 'forge') {
+    if (!a) die('用法: node farm.js forge <档位id[,档位id...]> <forge脚本名> [参数...]；forge 目录用 --forge-dir <路径> 或环境变量 FARM_FORGE_DIR 指定');
+    const forgeDir = argVal('--forge-dir') || process.env.FARM_FORGE_DIR;
+    if (!forgeDir) die('不知道 forge 装在哪：--forge-dir <路径>（forge 技能目录，里面有 scripts/），或设环境变量 FARM_FORGE_DIR');
+    const pass = [];
+    const raw = process.argv.slice(4);
+    for (let i = 0; i < raw.length; i++) { if (raw[i] === '--forge-dir') { i++; continue; } pass.push(raw[i]); } // 桥自用参数不透传给 forge
+    const scriptName = pass[0];
+    if (!scriptName) die('要指 forge 脚本名：record / api_run / probe / evidence / build_skill / run / login / diffrec / infer_params / interview / manage / diagnose');
+    const scriptPath = path.join(path.resolve(forgeDir), 'scripts', scriptName.replace(/\.mjs$/, '') + '.mjs');
+    if (!fs.existsSync(scriptPath)) die('forge 里没有这个脚本: ' + scriptPath);
+    if (pass.includes('--port')) die('档口由桥按档位分配，别自己传 --port');
+    const forgeArgs = pass.slice(1).filter(x => x !== '--keep-open');
+    forgeArgs.push('--keep-open'); // 焊死：跑完档留给农场管，不许 forge 收尾杀档
+    await ensureDaemon();
+    process.on('SIGINT', () => {}); // Ctrl+C 给 forge 自己接（它会存半场收工），桥只管等它退
+    for (const sid of a.split(',').map(x => x.trim()).filter(Boolean)) {
+      const s0 = (await api('GET', '/slots')).slots.find(x => x.id === sid);
+      if (!s0) die('没有这个档位: ' + sid);
+      if (!s0.alive) { await api('POST', '/slot/' + sid + '/start', {}); console.log('档 ' + sid + ' 没活着，已拉起'); }
+      if (/^record/.test(scriptName) && (await api('GET', '/slot/' + sid)).mode !== 'headful') {
+        await api('POST', '/slot/' + sid + '/stop', {}); // 录制要看得见的窗口：切有窗（登录态不丢）
+        await api('POST', '/slot/' + sid + '/start', { mode: 'headful' });
+        console.log('档 ' + sid + ' 已切有窗口（录制要点得着）');
+      }
+      const s = (await api('GET', '/slots')).slots.find(x => x.id === sid);
+      console.log('\n[' + sid + '] forge ' + path.basename(scriptPath) + ' ' + forgeArgs.join(' ') + ' --port ' + s.port + ' --keep-open');
+      const code = await new Promise(resolve => {
+        const ch = spawn(process.execPath, [scriptPath, ...forgeArgs, '--port', String(s.port)], { stdio: 'inherit' });
+        ch.on('exit', resolve);
+      });
+      console.log('[' + sid + '] 退出码 ' + code + (code ? '（看上面 forge 的输出找原因）' : '，档位留给农场管（空闲自动停，start 秒回）'));
+      if (code) process.exitCode = code;
+    }
+    return;
+  }
+
+  // ---- forge-rec：农场录制产物（脚本 id / 存Agent笔记 md）→ forge 的 rec.json ----
+  if (cmd === 'forge-rec') {
+    if (!a) die('用法: node farm.js forge-rec <脚本id | agent-notes/笔记.md 路径>');
+    let steps, apis, name;
+    if (/^\d+$/.test(a)) {
+      const sc = scripter.loadScript(a); // 本地读（跟总管同一个 FARM_HOME），脚本里 steps+apis 都全
+      steps = sc.steps; apis = sc.apis || []; name = sc.name;
+    } else {
+      const md = fs.readFileSync(path.resolve(a), 'utf8');
+      const jm = md.match(/```json\r?\n([\s\S]*?)```/);
+      if (!jm) die('这文件里没找到原始 steps JSON（要存Agent笔记的 md）');
+      steps = JSON.parse(jm[1]);
+      apis = []; // 笔记里的接口表没有请求体，探查 POST 时要回脚本或重录——够打分用
+      const row = /^\|\s*(GET|POST|PUT|DELETE|HEAD|OPTIONS)\s*\|\s*(\d+|\?)\s*\|\s*(\d+)\s*\|\s*(\S+)\s*\|/gm;
+      let m; while ((m = row.exec(md))) apis.push({ method: m[1], status: m[2] === '?' ? null : Number(m[2]), count: Number(m[3]), url: m[4], tsUTC: '', postData: null });
+      name = (md.match(/^#\s*录制笔记：(.+)$/m) || [])[1] || 'farm-rec';
+    }
+    if (!Array.isArray(steps) || !steps.length) die('这份里一步都没有，转不了');
+    const rec = scripter.toForgeRec(steps, apis, name, null);
+    const outDir = path.join(process.env.FARM_HOME || __dirname, 'forge-out');
+    fs.mkdirSync(outDir, { recursive: true });
+    const safe = String(name).replace(/[\\/:*?"<>|\s]+/g, '').slice(0, 40) || 'farm-rec';
+    const file = path.join(outDir, safe + '_' + Date.now() + '.rec.json');
+    fs.writeFileSync(file, JSON.stringify(rec, null, 1), 'utf8');
+    console.log('已转 forge 录制: ' + file + '（' + rec.actions.length + ' 步 / ' + rec.network.length + ' 条接口）');
+    console.log('下一步打分: node <forge>/scripts/evidence.mjs --recording "' + file + '"');
+    console.log('下一步探查(挂档口免登录): node farm.js forge 01 probe --recording "' + file + '"');
+    return;
+  }
+
   die('不认识的命令: ' + cmd);
 }
 main().catch(e => die(e.message));

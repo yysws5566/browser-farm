@@ -722,8 +722,37 @@ function saveAgentNote(dir, nm, meta, steps, apis) {
   return file;
 }
 
+// 农场录制产物 → forge(record-to-skill) 录制格式 rec.json：脚本/存Agent笔记的 steps+apis
+// 直接喂 forge 的 evidence 打分→probe 探查→build 建包管线（桥的另一头是 farm.js 的 forge 命令，
+// 两边谁也不用改对面）。字段契约按 forge evidence.mjs 实际读取面：actions[seq/type/at/text/selector/locator/page]
+// + network[at/method/url/status/body]，at 用它认的 HH:MM:SS。
+function toForgeRec(steps, apis, name, meta) {
+  const pad = n => String(n).padStart(2, '0');
+  const sec2hms = s => pad(Math.floor(s / 3600)) + ':' + pad(Math.floor(s / 60) % 60) + ':' + pad(s % 60);
+  const hms2sec = t => {
+    const m = String(t || '').match(/^(\d{1,2}):(\d{2}):(\d{2})/);
+    return m ? (+m[1]) * 3600 + (+m[2]) * 60 + (+m[3]) : NaN;
+  };
+  const nets = [];
+  for (const a of (apis || [])) {
+    const n = Math.min(Math.max(a.count || 1, 1), 20); // 轮询重复次数保留（evidence 靠重复度认数据源），封顶 20 防膨胀
+    for (let i = 0; i < n; i++) nets.push({ at: a.tsUTC || '', method: a.method || 'GET', url: a.url, status: a.status == null ? 0 : a.status, body: a.postData || null });
+  }
+  const times = nets.map(r => hms2sec(r.at)).filter(Number.isFinite);
+  const base = times.length ? Math.max(0, Math.min(...times) - steps.length) : 0; // 动作顺序铺在第一条接口之前，时间线才不倒挂
+  const actions = steps.map((s, i) => ({
+    seq: i + 1, type: 'click', at: sec2hms(base + i),
+    text: s.text || '', selector: s.selector || '', locator: { best: s.selector || null },
+    page: s.href || '', url: s.href || '',
+  }));
+  return {
+    meta: { name: name || 'farm-rec', finishedAt: new Date().toISOString(), from: 'browser-farm' + ((meta && meta.slotId) ? ' 档' + meta.slotId : '') },
+    actions, network: nets,
+  };
+}
+
 module.exports = {
   Cdp, attachPage, jget, samePage, openTabOnPort, recordSession, barSession, runScript, runLoop, runWatch,
   cellWatchExpr, findExpr, findOnce, waitFor, jitterPoint, humanClick,
-  saveScript, loadScript, deleteScript, nextId, listScripts, saveAgentNote,
+  saveScript, loadScript, deleteScript, nextId, listScripts, saveAgentNote, toForgeRec,
 };
