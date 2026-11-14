@@ -1,0 +1,10 @@
+browser-farm v0.1.22：录制「存 Agent 笔记」
+
+录制收工第三条出口：不建脚本，落 agent-notes/ 一份 agent 直接读的 md 笔记
+（步骤表 + 录制期间抓到的接口 + 原始 steps JSON）。
+
+- 窗口录制条蓝色「存Agent」/ GUI「停止存Agent笔记」/ CLI record --agent
+- 老的存脚本 / 不存 / 继续录行为不变
+- 测试 42+48 全过（新增 saveAgentNote 两断言）
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>

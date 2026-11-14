@@ -93,7 +93,8 @@
       </div>
       <div class="row" id="rec-live" style="display:none">
         <span class="live" id="rec-live-txt"></span>
-        <button class="btn" onclick="recStop()">停止并保存</button>
+        <button class="btn" onclick="recStop()">停止并存脚本</button>
+        <button class="btn" onclick="recStopAgent()">停止存Agent笔记</button>
         <button class="btn" onclick="recDrop()">不存</button>
       </div>
     </div>
@@ -355,6 +356,19 @@ async function recStop() {
     recInfo = null; paintRecBar();
     toast('已存脚本 ' + r.script.id + '「' + r.script.name + '」' + r.count + ' 步，在下面选档启动', true);
     refreshScripts();
+  } catch (e) {
+    recInfo = null; paintRecBar(); // 服务端会话已清（一步没录到等），这里跟着收
+    toast(e.message, false);
+  }
+}
+async function recStopAgent() { // 停止并存成 agent 笔记：不建脚本，落 agent-notes/ 一份 md 给 agent 直接读
+  if (!recInfo) return;
+  try {
+    const r = await api('POST', '/slot/' + recInfo.slotId + '/record', {
+      action: 'stop', name: document.getElementById('rec-name').value, asAgent: true,
+    });
+    recInfo = null; paintRecBar();
+    toast('已存 Agent 笔记 ' + r.agentNote + '（' + r.count + ' 步，没建脚本）', true);
   } catch (e) {
     recInfo = null; paintRecBar(); // 服务端会话已清（一步没录到等），这里跟着收
     toast(e.message, false);

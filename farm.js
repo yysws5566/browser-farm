@@ -77,7 +77,7 @@ async function main() {
     '  remove <id> [--wipe]       移除登记（--wipe 连数据目录一起删）',
     '  sniff <id> start|stop      抓包：start 开录页面背后的接口，stop 出清单',
     '  replay <id> <url> [--method M] [--data D] [--header k:v]  带档位登录态脱离浏览器重放',
-    '  record <id> [--name 名字]      录制点击路径（窗口右下角常驻条开录/停，Ctrl+C 也收）',
+    '  record <id> [--name 名字] [--agent]  录制点击路径（窗口右下角常驻条开录/停，Ctrl+C 也收）；--agent=不存脚本，存 agent-notes/ 笔记',
     '  build <id>                     数据触发向导（消费≥300点暂停这种）',
     '  runscript <脚本id> [档位id] [--loop N] [--once] [--dry]   后台执行（关终端也跑；档位没给用绑定的）',
     '  stopscript <脚本id> | scripts | showscript <脚本id>',
@@ -136,6 +136,7 @@ async function main() {
   if (cmd === 'record') {
     if (!a) die('record 要档位 id');
     const name = argVal('--name') || await ask('这个脚本叫什么：') || '未命名';
+    const asAgent = argFlag('--agent'); // 停止时不建脚本，存 agent-notes/ 的 md 笔记给 agent 读
     const startedAt = Date.now();
     let r;
     try { r = await api('POST', '/slot/' + a + '/record', { action: 'start', name }); }
@@ -147,8 +148,9 @@ async function main() {
       if (stopped) return; stopped = true;
       console.log('\n收到 Ctrl+C，停止并保存…');
       try {
-        const st = await api('POST', '/slot/' + a + '/record', { action: 'stop' });
-        if (st.ok) console.log('收工：共录到 ' + st.count + ' 步 → 脚本 ' + st.script.id + ' ' + st.script.name);
+        const st = await api('POST', '/slot/' + a + '/record', { action: 'stop', asAgent });
+        if (st.ok && st.agentNote) console.log('收工：共录到 ' + st.count + ' 步 → Agent 笔记 ' + st.agentNote);
+        else if (st.ok) console.log('收工：共录到 ' + st.count + ' 步 → 脚本 ' + st.script.id + ' ' + st.script.name);
         else console.log(st.error || '没保存上');
       } catch (e) { console.log('停止失败: ' + e.message); }
       process.exit(0);
@@ -168,6 +170,10 @@ async function main() {
         }
         if (lr && lr.at >= startedAt - 2000 && lr.discarded) {
           console.log('窗口里点了「不存」：丢弃 ' + lr.count + ' 步，没保存');
+          process.exit(0);
+        }
+        if (lr && lr.at >= startedAt - 2000 && lr.agentNote) {
+          console.log('窗口里点了「存Agent」：共 ' + lr.count + ' 步 → 笔记 agent-notes/' + lr.agentNote);
           process.exit(0);
         }
         if (lr && lr.at >= startedAt - 2000 && lr.scriptId) {
@@ -260,7 +266,7 @@ async function main() {
     return out(await api('POST', '/script/new', { ...sc, name: a || sc.name }));
   }
   if (cmd === 'bind') {
-    if (!a || !b) die('bind 要 脚本id 档位id（- = 解绑）[一句话说明]: bind 01 03 "下载资源站的包"');
+    if (!a || !b) die('bind 要 脚本id 档位id（- = 解绑）[一句话说明]: bind 01 03 "下载资源站包"');
     const body = b === '-' || b === 'none' ? { slot: '' } : { slot: b };
     if (c) body.desc = c;
     return out(await api('POST', '/script/' + a + '/bind', body));

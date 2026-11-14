@@ -149,6 +149,12 @@ function barSrc(label) {
   '    btnSave.type = "button";',
   '    btnSave.style.cssText = "padding:6px 14px;border:0;border-radius:6px;background:#059669;color:#fff;font:13px system-ui,sans-serif;cursor:pointer;";',
   '    btnSave.textContent = "存";',
+  // 存Agent：不进脚本体系，存成 agent 直接读的 markdown 笔记（发 agent 或落盘给它读）
+  '    var btnAgent = document.createElement("button");',
+  '    btnAgent.type = "button";',
+  '    btnAgent.style.cssText = "padding:6px 14px;border:0;border-radius:6px;background:#2563eb;color:#fff;font:13px system-ui,sans-serif;cursor:pointer;";',
+  '    btnAgent.title = "不存脚本，存一份给 agent 读的操作笔记（md 文件）";',
+  '    btnAgent.textContent = "存Agent";',
   '    var btnGo = document.createElement("button");',
   '    btnGo.type = "button";',
   '    btnGo.style.cssText = "padding:6px 10px;border:1px solid #4b5563;border-radius:6px;background:transparent;color:#d1d5db;font:13px system-ui,sans-serif;cursor:pointer;";',
@@ -163,6 +169,7 @@ function barSrc(label) {
   '      recBox.style.display = "none";',
   '      saveBox.style.display = "flex";',
   '      btnSave.disabled = false; btnSave.textContent = "存";',
+  '      btnAgent.disabled = false; btnAgent.textContent = "存Agent";',
   '      btnDrop.disabled = false; btnDrop.textContent = "不存";',
   '      try { nameInput.focus(); } catch (e) {}',
   '    }',
@@ -177,6 +184,13 @@ function barSrc(label) {
   '      try { window.__wsCmd(JSON.stringify({ cmd: "stop", name: nm })); }',
   '      catch (e) { btnSave.disabled = false; btnSave.textContent = "存"; }',
   '    }',
+  '    function doSaveAgent(){', // 与存同一条路，多带 asAgent：服务端不建脚本，写 agent-notes/ 笔记
+  '      if (btnAgent.disabled) return;',
+  '      btnAgent.disabled = true; btnAgent.textContent = "存中…";',
+  '      var nm = (nameInput.value || "").trim();',
+  '      try { window.__wsCmd(JSON.stringify({ cmd: "stop", name: nm, asAgent: true })); }',
+  '      catch (e) { btnAgent.disabled = false; btnAgent.textContent = "存Agent"; }',
+  '    }',
   '    function doDrop(){',
   '      if (btnDrop.disabled) return;',
   '      btnDrop.disabled = true; btnDrop.textContent = "丢弃中…";',
@@ -184,6 +198,7 @@ function barSrc(label) {
   '      catch (e) { btnDrop.disabled = false; btnDrop.textContent = "不存"; }',
   '    }',
   '    btnSave.addEventListener("click", doSave);',
+  '    btnAgent.addEventListener("click", doSaveAgent);',
   '    btnDrop.addEventListener("click", doDrop);',
   '    btnGo.addEventListener("click", backToRec);',
   '    nameInput.addEventListener("keydown", function(e){',
@@ -191,7 +206,7 @@ function barSrc(label) {
   '      else if (e.key === "Escape") backToRec();',
   '    });',
   '    recBox.appendChild(dot); recBox.appendChild(cnt); recBox.appendChild(btn);',
-  '    saveBox.appendChild(nameInput); saveBox.appendChild(btnSave); saveBox.appendChild(btnGo); saveBox.appendChild(btnDrop);',
+  '    saveBox.appendChild(nameInput); saveBox.appendChild(btnSave); saveBox.appendChild(btnAgent); saveBox.appendChild(btnGo); saveBox.appendChild(btnDrop);',
   '    bar.appendChild(idleBox); bar.appendChild(recBox); bar.appendChild(saveBox);',
   '    window.__farmBarSet = function(s){',
   '      window.__farmBarState = s === "rec" ? "rec" : "idle";',
@@ -665,8 +680,50 @@ function listScripts() {
   });
 }
 
+// 存 Agent 笔记：录制不进脚本体系，落一份 agent 直接读的 markdown（步骤表+抓到的接口+原始 JSON）
+// agent 拿到能干嘛：按步骤用 open/eval 复现、看接口清单判断哪步转纯后台直调、想挂机就照原始 JSON 转脚本
+function saveAgentNote(dir, nm, meta, steps, apis) {
+  fs.mkdirSync(dir, { recursive: true });
+  const safe = String(nm || '').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '').trim().slice(0, 40) || '未命名';
+  const t = new Date();
+  const p2 = n => String(n).padStart(2, '0');
+  const stamp = p2(t.getMonth() + 1) + p2(t.getDate()) + '-' + p2(t.getHours()) + p2(t.getMinutes()) + p2(t.getSeconds());
+  let file = path.join(dir, safe + '-' + stamp + '.md');
+  for (let i = 2; fs.existsSync(file); i++) file = path.join(dir, safe + '-' + stamp + '-' + i + '.md'); // 同名同秒不覆盖
+  const rows = steps.map((s, i) => '| ' + (i + 1) + ' | ' + (s.text || '') + ' | `' + (s.selector || '') + '` | ' + (s.href || '') + ' |').join('\n');
+  const apiRows = (apis || []).map(a => '| ' + a.method + ' | ' + (a.status == null ? '?' : a.status) + ' | ' + a.count + ' | ' + a.url + ' |').join('\n');
+  const md = [
+    '# 录制笔记：' + safe,
+    '',
+    '- 时间：' + t.toLocaleString('zh-CN'),
+    '- 档位：' + ((meta && meta.slotId) || '?') + ((meta && meta.note) ? '（账号：' + meta.note + '）' : ''),
+    '- 步数：' + steps.length + ((apis && apis.length) ? '，录制期间抓到 ' + apis.length + ' 个接口' : ''),
+    '- 这份是给人手上的 agent 读的操作记录，**不是农场脚本，不会自动跑**。想循环挂机：把底部原始 JSON 交 POST /script/new 转成脚本。',
+    '',
+    '## 人点了一遍什么',
+    '| # | 点什么 | 选择器 | 所在页面 |',
+    '|---|---|---|---|',
+    rows,
+  ].concat((apis && apis.length) ? [
+    '',
+    '## 录制期间背后的接口（次数多的多半是数据轮询，最值得转纯后台直调）',
+    '| 方法 | 状态 | 次数 | URL |',
+    '|---|---|---|---|',
+    apiRows,
+  ] : []).concat([
+    '',
+    '## 原始 steps（JSON，转脚本直接用）',
+    '```json',
+    JSON.stringify(steps.map(s => ({ selector: s.selector, text: s.text, tag: s.tag, href: s.href || null })), null, 2),
+    '```',
+    '',
+  ]).join('\n');
+  fs.writeFileSync(file, md, 'utf8');
+  return file;
+}
+
 module.exports = {
   Cdp, attachPage, jget, samePage, openTabOnPort, recordSession, barSession, runScript, runLoop, runWatch,
   cellWatchExpr, findExpr, findOnce, waitFor, jitterPoint, humanClick,
-  saveScript, loadScript, deleteScript, nextId, listScripts,
+  saveScript, loadScript, deleteScript, nextId, listScripts, saveAgentNote,
 };

@@ -280,6 +280,26 @@ async function cleanup() {
   });
   ok('CLI scripts 可见 01/90', cli.includes('01') && cli.includes('数据触发') && cli.includes('90'), cli.slice(0, 120));
 
+  // ===== 存 Agent 笔记（录制收工的另一条出口：不建脚本，落 md 给 agent 读） =====
+  const NOTE_DIR = path.join(TMP, 'agent-notes');
+  const noteSteps = [
+    { selector: '#b1', text: '刷新', tag: 'BUTTON', href: 'http://127.0.0.1:9882/x' },
+    { selector: null, text: '无ID按钮', tag: 'BUTTON', href: null },
+  ];
+  const noteApis = [
+    { url: 'https://h/api/list', method: 'POST', status: 200, count: 7, tsUTC: '00:00:01', postData: null },
+    { url: 'https://h/api/who', method: 'GET', status: 403, count: 1, tsUTC: '00:00:02', postData: null },
+  ];
+  const n1 = scripter.saveAgentNote(NOTE_DIR, '巡检流程/日', { slotId: '01', note: '商城-主号' }, noteSteps, noteApis);
+  const n2 = scripter.saveAgentNote(NOTE_DIR, '巡检流程/日', { slotId: '01' }, noteSteps, null); // 同名同秒：不覆盖
+  const md1 = fs.readFileSync(n1, 'utf8');
+  ok('Agent 笔记落盘且内容齐（步骤表/接口表/原始 JSON/用法说明）',
+    md1.includes('# 录制笔记：巡检流程日') && md1.includes('| 1 | 刷新 | `#b1` | http://127.0.0.1:9882/x |')
+    && md1.includes('POST | 200 | 7 | https://h/api/list') && md1.includes('"selector": "#b1"')
+    && md1.includes('不是农场脚本，不会自动跑'),
+    n1);
+  ok('文件名消毒+同名同秒不覆盖', /[\\/:*?"<>|]/.test(path.basename(n1)) === false && n1 !== n2 && fs.existsSync(n2), { n1, n2 });
+
   await cleanup();
   fs.rmSync(TMP, { recursive: true, force: true });
   console.log('\n' + pass + '/' + total + ' 断言' + (pass === total ? '全过 ✓' : '有失败 ✗'));

@@ -745,14 +745,14 @@ async function ensureBar(slot) {
       onCmd: async cmd => {
         // 条上「● 开始录制」/命名框「存」「不存」：与 GUI/CLI 同一条路；对面先停了就吃个"没在录制"，无害
         // 消息两代并存：旧窗口页发纯 "start"/"stop"；新版条停止带名字/丢弃 {"cmd":"stop","name":"xx","discard":true}
-        let op = cmd, name, discard = false;
+        let op = cmd, name, discard = false, asAgent = false;
         if (typeof cmd === 'string' && cmd.startsWith('{')) {
-          try { const m = JSON.parse(cmd); if (m && m.cmd === 'stop') { op = 'stop'; name = m.name; discard = !!m.discard; } }
+          try { const m = JSON.parse(cmd); if (m && m.cmd === 'stop') { op = 'stop'; name = m.name; discard = !!m.discard; asAgent = !!m.asAgent; } }
           catch (e) { /* 解析不动当没这个名字，走下面的纯 stop 分支 */ }
         }
         try {
           if (op === 'start') await recordStart(loadCfg(), slot, {});
-          else if (op === 'stop') await recordStop(slot, name, discard);
+          else if (op === 'stop') await recordStop(slot, name, discard, asAgent);
         } catch (e) {
           log('窗口里' + (op === 'start' ? '开始录制' : '停止保存') + '失败: ' + e.message);
           // 停止失败（比如"没在录制"）要把条从命名态捞回来，不然卡在"存"上回不去
@@ -813,7 +813,7 @@ async function stopOursSniff(slot) {
   catch (e) { log('录制抓包收摊失败（这场的接口清单没存上）: ' + e.message); return null; }
 }
 
-async function recordStop(slot, name, discard) {
+async function recordStop(slot, name, discard, asAgent) {
   if (!recSession) throw new Error('没在录制');
   if (recSession.slotId !== slot.id) throw new Error('在录的是档 ' + recSession.slotId + '，不是 ' + slot.id);
   let steps;
@@ -833,6 +833,12 @@ async function recordStop(slot, name, discard) {
     return { ok: true, discarded: true, count };
   }
   if (!count) throw new Error('一步没录到，没保存（去档 ' + slot.id + ' 的窗口里点几下再停）');
+  if (asAgent) { // 存 Agent 笔记：不建脚本，落 agent-notes/ 一份 md 给 agent 直接读（发它或让它自己来读都行）
+    const note = scripter.saveAgentNote(path.join(HOME, 'agent-notes'), nm, { slotId: slot.id, note: slot.note }, steps, apis);
+    lastRec = { agentNote: path.basename(note), slotId: slot.id, name: nm, count, at: Date.now() };
+    log('档 ' + slot.id + ' 录制收工 ' + count + ' 步 → Agent 笔记 ' + note + (apis ? '（带 ' + apis.length + ' 个接口记录）' : '') + '，没建脚本');
+    return { ok: true, agentNote: note, count };
+  }
   const sc = {
     id: scripter.nextId(), name: nm, type: 'loop',
     steps: steps.map(s => ({ selector: s.selector, text: s.text, tag: s.tag, href: s.href || null })), // href=录的时候点的哪个页，跑时没这页就自动开回来
@@ -981,7 +987,7 @@ const server = http.createServer(async (req, res) => {
       if (act === 'record') {
         const action = body.action || 'start';
         if (action === 'start') return send(res, 200, await recordStart(cfg, slot, body));
-        if (action === 'stop') return send(res, 200, await recordStop(slot, body.name, !!body.discard));
+        if (action === 'stop') return send(res, 200, await recordStop(slot, body.name, !!body.discard, !!body.asAgent));
         throw new Error('record 的 action 只认 start/stop');
       }
       if (act === 'restore') return send(res, 200, await restoreSlot(cfg, slot, body.name));

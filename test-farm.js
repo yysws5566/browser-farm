@@ -261,10 +261,10 @@ async function cleanup() {
 
   // 13 skill 绑定（v0.1.19）：newscript 带绑定/说明、坏绑定拒收、bind 绑解绑、无档无绑人话报错、导入重绑映射
   const stepsB = [{ selector: '#b1' }];
-  let rNew = await api('POST', '/script/new', { name: '绑定探针', steps: stepsB, bindSlot: '02', desc: '下载资源站的 zip 包' });
+  let rNew = await api('POST', '/script/new', { name: '绑定探针', steps: stepsB, bindSlot: '02', desc: '下载 资源站 的 zip 包' });
   ok('newscript 带 bindSlot+desc 落盘', rNew.ok && rNew.id, rNew);
   const boundSc = (await api('GET', '/scripts')).scripts.find(s => s.id === rNew.id);
-  ok('脚本列表带绑定和说明', boundSc && boundSc.bindSlot === '02' && boundSc.desc === '下载资源站的 zip 包', boundSc);
+  ok('脚本列表带绑定和说明', boundSc && boundSc.bindSlot === '02' && boundSc.desc === '下载 资源站 的 zip 包', boundSc);
   const rBadBind = await api('POST', '/script/new', { name: '坏绑定', steps: stepsB, bindSlot: '99' });
   ok('bindSlot 档位不存在当场拒收', rBadBind.ok === false && /bindSlot/.test(rBadBind.error || ''), rBadBind);
   const rBind = await api('POST', '/script/' + rNew.id + '/bind', { slot: '01', desc: '改成档01了' });

@@ -46,7 +46,7 @@ node farm.js start 01 --eff      # 或 GUI 点「效率跑」
 | `snap <id> <名>` / `restore <id> <名>` | 快照 / 回滚（自动停机拷目录） |
 | `sniff <id> start\|stop` | 抓包：录页面背后的 XHR/Fetch 接口清单 |
 | `replay <id> <url>` | 带档位登录态脱离浏览器重放（判断能否转纯接口） |
-| `record <id>` | 录制点击路径（窗口右下角常驻条，滤假点击，自动带抓包） |
+| `record <id> [--agent]` | 录制点击路径（窗口右下角常驻条，滤假点击，自动带抓包）；`--agent`=不存脚本，存 `agent-notes/` 一份 agent 直接读的 md 笔记 |
 | `newscript` / `runscript` / `bind` | agent 写脚本 / 后台执行 / 脚本绑账号档 |
 | `fixchrome` | 清占默认数据目录的无头 Chrome 残留（桌面 Chrome 点不开就跑它） |
 | `export` / `import` | 配置搬家：档位登记+全部脚本（登录态不跟走，另登一次） |
@@ -70,7 +70,7 @@ HTTP API 与 CLI 同构（`GET /slots`、`POST /slot/01/start|stop|open|eval|str
 
 ```bash
 node test-farm.js         # 离线全链：真 Chrome + 本地页面，42 条断言（含效率模式域名拦截 A/B、structured）
-node test-scripter.js     # 脚本器：录制/循环/盯表/重启存活/看护/导入导出/绑定，46 条断言
+node test-scripter.js     # 脚本器：录制/循环/盯表/重启存活/看护/导入导出/绑定/存Agent笔记，48 条断言
 node test-idle-script.js  # 空闲停豁免：脚本运行中的档不被杀（约 4 分钟）
 ```
 
